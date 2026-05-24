@@ -55,8 +55,10 @@ w_prec  = st.sidebar.slider("💧 Curah Hujan (Benefit)", 0.0, 1.0, 0.35, 0.05)
 w_temp  = st.sidebar.slider("🌡️ Suhu Rata-rata (Cost)",  0.0, 1.0, 0.25, 0.05)
 w_sun   = st.sidebar.slider("☀️ Sinar Matahari (Benefit)", 0.0, 1.0, 0.25, 0.05)
 w_wind  = st.sidebar.slider("💨 Kecepatan Angin (Cost)",  0.0, 1.0, 0.15, 0.05)
+w_gust  = st.sidebar.slider("🌪️ Kec. Angin Maksimum/Gusts (Cost)", 0.0, 1.0, 0.10, 0.05)
+w_dry   = st.sidebar.slider("🏜️ Hari Kering / Tanpa Hujan (Cost)", 0.0, 1.0, 0.10, 0.05)
 
-total_w = round(w_prec + w_temp + w_sun + w_wind, 2)
+total_w = round(w_prec + w_temp + w_sun + w_wind + w_gust + w_dry, 2)
 if total_w != 1.0:
     st.sidebar.warning(f"⚠️ Total bobot = {total_w} (harus 1.0)")
     bobot_valid = False
@@ -82,38 +84,48 @@ else:
         value=(years[0], years[-1]),
     )
     df_filtered = df[(df["Year"] >= year_range[0]) & (df["Year"] <= year_range[1])].copy()
-    periode = f"{year_range[0]-year_range[1]}"
+    periode = f"{year_range[0]}–{year_range[1]}"
 
+
+df_filtered["Hari_Kering"] = (df_filtered["Precipitation_Sum"] == 0).astype(int)
 
 monthly = df_filtered.groupby("Month").agg(
     Curah_Hujan   = ("Precipitation_Sum", "mean"),
     Suhu_RataRata = ("Temp_Mean",         "mean"),
     Sinar_Matahari= ("Sunshine_Duration", "mean"),
     Kecepatan_Angin=("Windspeed_Max",     "mean"),
+    Kec_Gusts      = ("Windgusts_Max",     "mean"),   
+    Hari_Kering    = ("Hari_Kering",       "sum"),
 ).reset_index()
 
+n_years = len(df_filtered["Year"].unique())
+monthly["Hari_Kering"] = monthly["Hari_Kering"] / n_years
 monthly["Bulan"] = monthly["Month"].map(MONTH_NAMES)
 
+KRITERIA_COLS = ["Curah_Hujan","Suhu_RataRata","Sinar_Matahari","Kecepatan_Angin","Kec_Gusts","Hari_Kering"]
+ATRIBUT = [1, 0, 1, 0, 0, 0]
 
 def saw(df_m, bobot):
-    data = df_m[["Curah_Hujan","Suhu_RataRata","Sinar_Matahari","Kecepatan_Angin"]].values.copy().astype(float)
-    # Benefit: Curah Hujan, Sinar Matahari  → dibagi max
-    # Cost   : Suhu, Kecepatan Angin        → dibagi dengan nilai / min
-    atribut = [1, 0, 1, 0]   # 1=benefit, 0=cost
+    data = df_m[KRITERIA_COLS].values.copy().astype(float)
     norm = np.zeros_like(data)
-    for j, att in enumerate(atribut):
+    for j, att in enumerate(ATRIBUT):
         col = data[:, j]
         if att == 1:
-            norm[:, j] = col / col.max()
+            max_val = col.max()
+            norm[:, j] = col / max_val if max_val != 0 else 0
         else:
-            norm[:, j] = col.min() / col
+            min_val = col.min()
+            with np.errstate(divide='ignore', invalid='ignore'):
+                result = np.where(col != 0, min_val / col, 0)
+            norm[:, j] = result
+    norm = np.nan_to_num(norm, nan=0.0, posinf=0.0, neginf=0.0)  # tangkap sisa NaN/inf
     skor = norm @ np.array(bobot)
     return norm, skor
 
-norm_matrix, skor = saw(monthly, [w_prec, w_temp, w_sun, w_wind])
+norm_matrix, skor = saw(monthly, [w_prec, w_temp, w_sun, w_wind, w_gust, w_dry])
 
 monthly["Skor_SAW"]  = skor
-monthly["Ranking"]   = monthly["Skor_SAW"].rank(ascending=False).astype(int)
+monthly["Ranking"]   = monthly["Skor_SAW"].rank(ascending=False).fillna(0).astype(int)
 
 
 tab1, tab2, tab3, tab4 = st.tabs([
@@ -125,43 +137,41 @@ with tab1:
     st.subheader("Rata-rata Cuaca per Bulan")
     st.caption(f"Periode {periode}  |  Total data: {len(df_filtered):,} hari")
 
-    display = monthly[["Bulan","Curah_Hujan","Suhu_RataRata","Sinar_Matahari","Kecepatan_Angin"]].copy()
-    display.columns = ["Bulan","Curah Hujan (mm)","Suhu Rata-rata (°C)","Sinar Matahari (s)","Kec. Angin (km/h)"]
+    display = monthly[["Bulan","Curah_Hujan","Suhu_RataRata","Sinar_Matahari","Kecepatan_Angin","Kec_Gusts","Hari_Kering"]].copy()
+    display.columns = ["Bulan","Curah Hujan (mm)","Suhu Rata-rata (°C)","Sinar Matahari (s)","Kec. Angin (km/h)","Kec. Gusts (km/h)","Hari Kering (hari/thn)"]
     st.dataframe(display.set_index("Bulan").style.format("{:.2f}"), use_container_width=True)
 
-    col1, col2, col3, col4 = st.columns(4)
-    best_rain = monthly.loc[monthly["Curah_Hujan"].idxmax(), "Bulan"]
-    low_temp  = monthly.loc[monthly["Suhu_RataRata"].idxmin(), "Bulan"]
-    best_sun  = monthly.loc[monthly["Sinar_Matahari"].idxmax(), "Bulan"]
-    low_wind  = monthly.loc[monthly["Kecepatan_Angin"].idxmin(), "Bulan"]
-    col1.metric("💧 Curah Hujan Tertinggi", best_rain)
-    col2.metric("🌡️ Suhu Terendah", low_temp)
-    col3.metric("☀️ Sinar Matahari Terbanyak", best_sun)
-    col4.metric("💨 Angin Terendah", low_wind)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    col1.metric("💧 Curah Hujan Tertinggi",     monthly.loc[monthly["Curah_Hujan"].idxmax(),    "Bulan"])
+    col2.metric("🌡️ Suhu Terendah",              monthly.loc[monthly["Suhu_RataRata"].idxmin(),  "Bulan"])
+    col3.metric("☀️ Sinar Matahari Terbanyak",   monthly.loc[monthly["Sinar_Matahari"].idxmax(), "Bulan"])
+    col4.metric("💨 Angin Terendah",             monthly.loc[monthly["Kecepatan_Angin"].idxmin(),"Bulan"])
+    col5.metric("🌪️ Gusts Terendah",             monthly.loc[monthly["Kec_Gusts"].idxmin(),      "Bulan"])
+    col6.metric("🏜️ Hari Kering Paling Sedikit", monthly.loc[monthly["Hari_Kering"].idxmin(),    "Bulan"])
 
 # ── Tab 2: Matriks SAW ───────────────────────
 with tab2:
     st.subheader("Langkah SAW")
 
     st.markdown("#### 1. Matriks Keputusan (Nilai Asli)")
-    raw_cols = ["Curah_Hujan","Suhu_RataRata","Sinar_Matahari","Kecepatan_Angin"]
+    raw_cols = KRITERIA_COLS
     raw_df = monthly.set_index("Bulan")[raw_cols].copy()
-    raw_df.columns = ["Curah Hujan (mm)","Suhu (°C)","Sinar Matahari (s)","Kec. Angin (km/h)"]
+    raw_df.columns = ["Curah Hujan (mm)","Suhu (°C)","Sinar Matahari (s)","Kec. Angin (km/h)","Kec. Gusts (km/h)","Hari Kering (hari/thn)"]
     st.dataframe(raw_df.style.format("{:.4f}"), use_container_width=True)
 
     st.markdown("#### 2. Matriks Ternormalisasi")
     norm_df = pd.DataFrame(
         norm_matrix,
         index=monthly["Bulan"],
-        columns=["Curah Hujan (Benefit)","Suhu (Cost)","Sinar Matahari (Benefit)","Kec. Angin (Cost)"]
+        columns=["Curah Hujan (Benefit)","Suhu (Cost)","Sinar Matahari (Benefit)","Kec. Angin (Cost)","Kec. Gusts (Cost)","Hari Kering (Cost)"]
     )
     st.dataframe(norm_df.style.format("{:.4f}").background_gradient(axis=0, cmap="YlGn"), use_container_width=True)
 
     st.markdown("#### 3. Bobot yang Digunakan")
     bobot_df = pd.DataFrame({
-        "Kriteria":["Curah Hujan","Suhu Rata-rata","Sinar Matahari","Kecepatan Angin"],
-        "Tipe":["Benefit","Cost","Benefit","Cost"],
-        "Bobot":[w_prec, w_temp, w_sun, w_wind]
+        "Kriteria":["Curah Hujan","Suhu Rata-rata","Sinar Matahari","Kec. Angin","Kec. Gusts","Hari Kering"],
+        "Tipe":    ["Benefit","Cost","Benefit","Cost","Cost","Cost"],
+        "Bobot":   [w_prec, w_temp, w_sun, w_wind, w_gust, w_dry]
     })
     st.dataframe(bobot_df.set_index("Kriteria"), use_container_width=True)
 
@@ -221,14 +231,15 @@ with tab4:
 
     st.subheader("Distribusi Cuaca Bulanan")
     kriteria_opt = st.selectbox(
-        "Pilih kriteria:",
-        ["Curah Hujan (mm)","Suhu Rata-rata (°C)","Sinar Matahari (s)","Kecepatan Angin (km/h)"]
+        "Pilih kriteria:", ["Curah Hujan (mm)","Suhu Rata-rata (°C)","Sinar Matahari (s)","Kecepatan Angin (km/h)","Kec. Gusts (km/h)","Hari Kering (hari/thn)"]
     )
     col_map = {
-        "Curah Hujan (mm)":       "Curah_Hujan",
-        "Suhu Rata-rata (°C)":    "Suhu_RataRata",
-        "Sinar Matahari (s)":     "Sinar_Matahari",
-        "Kecepatan Angin (km/h)": "Kecepatan_Angin",
+        "Curah Hujan (mm)":         "Curah_Hujan",
+        "Suhu Rata-rata (°C)":      "Suhu_RataRata",
+        "Sinar Matahari (s)":       "Sinar_Matahari",
+        "Kecepatan Angin (km/h)":   "Kecepatan_Angin",
+        "Kec. Gusts (km/h)":        "Kec_Gusts",        # TAMBAH
+        "Hari Kering (hari/thn)":   "Hari_Kering",      # TAMBAH
     }
     fig2, ax2 = plt.subplots(figsize=(10, 4))
     ax2.plot(monthly["Bulan"], monthly[col_map[kriteria_opt]],
