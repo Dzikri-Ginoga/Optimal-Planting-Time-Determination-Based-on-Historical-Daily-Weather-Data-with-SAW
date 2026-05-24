@@ -4,7 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
-
 # Konfigurasi halaman
 st.set_page_config(
     page_title="SCPK – Masa Tanam Optimal",
@@ -14,6 +13,12 @@ st.set_page_config(
 
 st.title("🌾 Penentuan Masa Tanam Optimal")
 st.caption("Metode SAW (Simple Additive Weighting) · Data Historis Cuaca Harian Indonesia")
+
+if "hitung_spk" not in st.session_state:
+    st.session_state.hitung_spk = False
+
+def jalankan_kalkulasi():
+    st.session_state.hitung_spk = True
 
 # Upload / default data
 st.sidebar.header("📂 Data Cuaca")
@@ -44,7 +49,6 @@ MONTH_NAMES = {
     5:"Mei", 6:"Juni", 7:"Juli", 8:"Agustus",
     9:"September", 10:"Oktober", 11:"November", 12:"Desember"
 }
-
 
 st.sidebar.header("⚙️ Parameter SAW")
 
@@ -85,6 +89,9 @@ else:
     )
     df_filtered = df[(df["Year"] >= year_range[0]) & (df["Year"] <= year_range[1])].copy()
     periode = f"{year_range[0]}–{year_range[1]}"
+
+st.sidebar.divider()
+st.sidebar.button("🚀 Hitung SPK", on_click=jalankan_kalkulasi, type="primary", use_container_width=True)
 
 
 df_filtered["Hari_Kering"] = (df_filtered["Precipitation_Sum"] == 0).astype(int)
@@ -127,9 +134,9 @@ norm_matrix, skor = saw(monthly, [w_prec, w_temp, w_sun, w_wind, w_gust, w_dry])
 monthly["Skor_SAW"]  = skor
 monthly["Ranking"]   = monthly["Skor_SAW"].rank(ascending=False).fillna(0).astype(int)
 
-
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📊 Data Cuaca", "🔢 Matriks SAW", "🏆 Hasil & Ranking", "📈 Visualisasi"
+# Tambah Tab ke-5 untuk Profil
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📊 Data Cuaca", "🔢 Matriks SAW", "🏆 Hasil & Ranking", "📈 Visualisasi", "👥 Profil Kelompok"
 ])
 
 # ── Tab 1: Data Cuaca ────────────────────────
@@ -151,41 +158,46 @@ with tab1:
 
 # ── Tab 2: Matriks SAW ───────────────────────
 with tab2:
-    st.subheader("Langkah SAW")
+    if not st.session_state.hitung_spk:
+        st.info("👈 Silakan atur bobot dan tekan tombol **'🚀 Hitung SPK'** di sidebar untuk memproses matriks.")
+    else:
+        st.subheader("Langkah SAW")
 
-    st.markdown("#### 1. Matriks Keputusan (Nilai Asli)")
-    raw_cols = KRITERIA_COLS
-    raw_df = monthly.set_index("Bulan")[raw_cols].copy()
-    raw_df.columns = ["Curah Hujan (mm)","Suhu (°C)","Sinar Matahari (s)","Kec. Angin (km/h)","Kec. Gusts (km/h)","Hari Kering (hari/thn)"]
-    st.dataframe(raw_df.style.format("{:.4f}"), use_container_width=True)
+        st.markdown("#### 1. Matriks Keputusan (Nilai Asli)")
+        raw_cols = KRITERIA_COLS
+        raw_df = monthly.set_index("Bulan")[raw_cols].copy()
+        raw_df.columns = ["Curah Hujan (mm)","Suhu (°C)","Sinar Matahari (s)","Kec. Angin (km/h)","Kec. Gusts (km/h)","Hari Kering (hari/thn)"]
+        st.dataframe(raw_df.style.format("{:.4f}"), use_container_width=True)
 
-    st.markdown("#### 2. Matriks Ternormalisasi")
-    norm_df = pd.DataFrame(
-        norm_matrix,
-        index=monthly["Bulan"],
-        columns=["Curah Hujan (Benefit)","Suhu (Cost)","Sinar Matahari (Benefit)","Kec. Angin (Cost)","Kec. Gusts (Cost)","Hari Kering (Cost)"]
-    )
-    st.dataframe(norm_df.style.format("{:.4f}").background_gradient(axis=0, cmap="YlGn"), use_container_width=True)
+        st.markdown("#### 2. Matriks Ternormalisasi")
+        norm_df = pd.DataFrame(
+            norm_matrix,
+            index=monthly["Bulan"],
+            columns=["Curah Hujan (Benefit)","Suhu (Cost)","Sinar Matahari (Benefit)","Kec. Angin (Cost)","Kec. Gusts (Cost)","Hari Kering (Cost)"]
+        )
+        st.dataframe(norm_df.style.format("{:.4f}").background_gradient(axis=0, cmap="YlGn"), use_container_width=True)
 
-    st.markdown("#### 3. Bobot yang Digunakan")
-    bobot_df = pd.DataFrame({
-        "Kriteria":["Curah Hujan","Suhu Rata-rata","Sinar Matahari","Kec. Angin","Kec. Gusts","Hari Kering"],
-        "Tipe":    ["Benefit","Cost","Benefit","Cost","Cost","Cost"],
-        "Bobot":   [w_prec, w_temp, w_sun, w_wind, w_gust, w_dry]
-    })
-    st.dataframe(bobot_df.set_index("Kriteria"), use_container_width=True)
+        st.markdown("#### 3. Bobot yang Digunakan")
+        bobot_df = pd.DataFrame({
+            "Kriteria":["Curah Hujan","Suhu Rata-rata","Sinar Matahari","Kec. Angin","Kec. Gusts","Hari Kering"],
+            "Tipe":    ["Benefit","Cost","Benefit","Cost","Cost","Cost"],
+            "Bobot":   [w_prec, w_temp, w_sun, w_wind, w_gust, w_dry]
+        })
+        st.dataframe(bobot_df.set_index("Kriteria"), use_container_width=True)
 
-    st.markdown("#### 4. Nilai Preferensi (Skor SAW)")
-    pref_df = monthly[["Bulan","Skor_SAW"]].copy()
-    pref_df.columns = ["Bulan","Nilai Preferensi"]
-    st.dataframe(
-        pref_df.set_index("Bulan").style.format("{:.4f}").bar(color="#4caf50"),
-        use_container_width=True,
-    )
+        st.markdown("#### 4. Nilai Preferensi (Skor SAW)")
+        pref_df = monthly[["Bulan","Skor_SAW"]].copy()
+        pref_df.columns = ["Bulan","Nilai Preferensi"]
+        st.dataframe(
+            pref_df.set_index("Bulan").style.format("{:.4f}").bar(color="#4caf50"),
+            use_container_width=True,
+        )
 
 # ── Tab 3: Hasil & Ranking ───────────────────
 with tab3:
-    if not bobot_valid:
+    if not st.session_state.hitung_spk:
+        st.info("👈 Silakan atur bobot dan tekan tombol **'🚀 Hitung SPK'** di sidebar untuk melihat hasil perangkingan.")
+    elif not bobot_valid:
         st.warning("Bobot belum valid (total harus 1.0). Atur di sidebar.")
     else:
         ranking_df = monthly[["Ranking","Bulan","Skor_SAW"]].sort_values("Ranking").copy()
@@ -214,43 +226,69 @@ with tab3:
 
 # ── Tab 4: Visualisasi ───────────────────────
 with tab4:
-    st.subheader("Grafik Skor SAW per Bulan")
-    fig, ax = plt.subplots(figsize=(10, 4))
-    colors = ["#4caf50" if r == 1 else "#90caf9" for r in monthly["Ranking"]]
-    bars = ax.bar(monthly["Bulan"], monthly["Skor_SAW"], color=colors, edgecolor="white")
-    ax.set_ylabel("Skor SAW")
-    ax.set_xlabel("Bulan")
-    ax.set_ylim(0, monthly["Skor_SAW"].max() * 1.15)
-    ax.tick_params(axis="x", rotation=45)
-    for bar, val in zip(bars, monthly["Skor_SAW"]):
-        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.005,
-                f"{val:.3f}", ha="center", va="bottom", fontsize=8)
-    ax.set_title("Skor SAW Penentuan Masa Tanam Optimal")
-    plt.tight_layout()
-    st.pyplot(fig)
+    if not st.session_state.hitung_spk:
+        st.info("👈 Silakan atur bobot dan tekan tombol **'🚀 Hitung SPK'** di sidebar untuk melihat grafik.")
+    else:
+        st.subheader("1. Grafik Skor SAW per Bulan")
+        fig, ax = plt.subplots(figsize=(10, 4))
+        colors = ["#4caf50" if r == 1 else "#90caf9" for r in monthly["Ranking"]]
+        bars = ax.bar(monthly["Bulan"], monthly["Skor_SAW"], color=colors, edgecolor="white")
+        ax.set_ylabel("Skor SAW")
+        ax.set_xlabel("Bulan")
+        ax.set_ylim(0, monthly["Skor_SAW"].max() * 1.15)
+        ax.tick_params(axis="x", rotation=45)
+        for bar, val in zip(bars, monthly["Skor_SAW"]):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.005,
+                    f"{val:.3f}", ha="center", va="bottom", fontsize=8)
+        ax.set_title("Skor SAW Penentuan Masa Tanam Optimal")
+        plt.tight_layout()
+        st.pyplot(fig)
 
-    st.subheader("Distribusi Cuaca Bulanan")
-    kriteria_opt = st.selectbox(
-        "Pilih kriteria:", ["Curah Hujan (mm)","Suhu Rata-rata (°C)","Sinar Matahari (s)","Kecepatan Angin (km/h)","Kec. Gusts (km/h)","Hari Kering (hari/thn)"]
-    )
-    col_map = {
-        "Curah Hujan (mm)":         "Curah_Hujan",
-        "Suhu Rata-rata (°C)":      "Suhu_RataRata",
-        "Sinar Matahari (s)":       "Sinar_Matahari",
-        "Kecepatan Angin (km/h)":   "Kecepatan_Angin",
-        "Kec. Gusts (km/h)":        "Kec_Gusts",        # TAMBAH
-        "Hari Kering (hari/thn)":   "Hari_Kering",      # TAMBAH
-    }
-    fig2, ax2 = plt.subplots(figsize=(10, 4))
-    ax2.plot(monthly["Bulan"], monthly[col_map[kriteria_opt]],
-             marker="o", color="#1976d2", linewidth=2)
-    ax2.fill_between(monthly["Bulan"], monthly[col_map[kriteria_opt]], alpha=0.15, color="#1976d2")
-    ax2.set_title(f"{kriteria_opt} Rata-rata per Bulan")
-    ax2.set_ylabel(kriteria_opt)
-    ax2.tick_params(axis="x", rotation=45)
-    plt.tight_layout()
-    st.pyplot(fig2)
+        st.divider()
 
+        st.subheader("2. Distribusi Cuaca Bulanan")
+        kriteria_opt = st.selectbox(
+            "Pilih kriteria:", ["Curah Hujan (mm)","Suhu Rata-rata (°C)","Sinar Matahari (s)","Kecepatan Angin (km/h)","Kec. Gusts (km/h)","Hari Kering (hari/thn)"]
+        )
+        col_map = {
+            "Curah Hujan (mm)":         "Curah_Hujan",
+            "Suhu Rata-rata (°C)":      "Suhu_RataRata",
+            "Sinar Matahari (s)":       "Sinar_Matahari",
+            "Kecepatan Angin (km/h)":   "Kecepatan_Angin",
+            "Kec. Gusts (km/h)":        "Kec_Gusts",
+            "Hari Kering (hari/thn)":   "Hari_Kering",
+        }
+        fig2, ax2 = plt.subplots(figsize=(10, 4))
+        ax2.plot(monthly["Bulan"], monthly[col_map[kriteria_opt]],
+                 marker="o", color="#1976d2", linewidth=2)
+        ax2.fill_between(monthly["Bulan"], monthly[col_map[kriteria_opt]], alpha=0.15, color="#1976d2")
+        ax2.set_title(f"{kriteria_opt} Rata-rata per Bulan")
+        ax2.set_ylabel(kriteria_opt)
+        ax2.tick_params(axis="x", rotation=45)
+        plt.tight_layout()
+        st.pyplot(fig2)
+
+        st.divider()
+        
+        st.subheader("3. Korelasi Curah Hujan vs Suhu Rata-rata")
+        fig3, ax3 = plt.subplots(figsize=(10, 4))
+        ax3.scatter(monthly["Curah_Hujan"], monthly["Suhu_RataRata"], color="#e91e63", s=100, alpha=0.7)
+        for i, txt in enumerate(monthly["Bulan"]):
+            ax3.annotate(txt, (monthly["Curah_Hujan"].iloc[i], monthly["Suhu_RataRata"].iloc[i]), 
+                         xytext=(5, 5), textcoords="offset points", fontsize=9)
+        ax3.set_title("Korelasi Curah Hujan dan Suhu")
+        ax3.set_xlabel("Curah Hujan (mm)")
+        ax3.set_ylabel("Suhu Rata-rata (°C)")
+        plt.tight_layout()
+        st.pyplot(fig3)
+
+
+with tab5:
+    
+    col_prof1, col_prof2 = st.columns(2)
+    with col_prof1:
+        st.info("Nama: M. Dzikri Ginoga\n\nNIM: 123240237")
+    with col_prof2:
+        st.info("Nama: Bintang Shada Kawibya Putra\n\nNIM: 123240247")
 
 st.divider()
-
