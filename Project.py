@@ -486,8 +486,8 @@ with tab5:
     st.subheader("👨‍💻 Tim Pengembang")
     col_prof1, col_prof2 = st.columns(2)
     with col_prof1:
-        st.info("**Anggota 1**\n\nNama: Bintang Shada Kawibya Putra\n\nNPM / NIM: 123240247")
+        st.info("**Anggota 1**\n\nNama: M. Dzikri Ginoga\n\nNIM: 123240237")
     with col_prof2:
-        st.info("**Anggota 2**\n\nNama: M. Dzikri Ginoga\n\nNPM / NIM: 123240237")
+        st.info("**Anggota 2**\n\nNama: Bintang Shada Kawibya Putra\n\nNIM: 123240247")
 
 st.divider()
