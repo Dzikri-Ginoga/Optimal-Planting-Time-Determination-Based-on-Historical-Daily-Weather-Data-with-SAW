@@ -67,10 +67,10 @@ else:
 
 st.sidebar.subheader("Bobot Kriteria")
 w_prec  = st.sidebar.slider("Curah Hujan", 0.0, 1.0, 0.15, 0.05)
-w_temp  = st.sidebar.slider("Suhu Rata-rata (Cost)",  0.0, 1.0, 0.25, 0.05)
-w_sun   = st.sidebar.slider("Sinar Matahari (Benefit)", 0.0, 1.0, 0.25, 0.05)
-w_wind  = st.sidebar.slider("Kecepatan Angin (Cost)",  0.0, 1.0, 0.15, 0.05)
-w_gust  = st.sidebar.slider("Kec. Angin Maksimum (Cost)", 0.0, 1.0, 0.10, 0.05)
+w_temp  = st.sidebar.slider("Suhu Rata-rata",  0.0, 1.0, 0.25, 0.05)
+w_sun   = st.sidebar.slider("Sinar Matahari", 0.0, 1.0, 0.25, 0.05)
+w_wind  = st.sidebar.slider("Kecepatan Angin",  0.0, 1.0, 0.15, 0.05)
+w_gust  = st.sidebar.slider("Kec. Angin Maksimum", 0.0, 1.0, 0.10, 0.05)
 w_dry   = st.sidebar.slider("Hari Kering", 0.0, 1.0, 0.10, 0.05)
 
 total_w = round(w_prec + w_temp + w_sun + w_wind + w_gust + w_dry, 2)
